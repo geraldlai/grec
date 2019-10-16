@@ -1,0 +1,100 @@
+#!/usr/bin/env perl
+
+# grec: grep grep-context
+
+# $ grep -C 5 foo * | grec grep bar
+# ( grep 'bar' from contextual output with 'foo' while maintaining context )
+# ( grec understands grep, rg, and ag )
+
+# Author: Gerald Lai
+# License: 0BSD
+
+use warnings;
+use strict;
+
+use File::Temp qw(tempfile);
+
+my $color = 1;
+if (@ARGV && $ARGV[0] =~ /^--(no)?color$/) {
+    $color = !$1;
+    shift @ARGV;
+}
+
+my $new_group = 1;
+my @groups;
+my @lines; # 0th not used
+my $i = 0;
+
+my ($IN, $infile) = tempfile("grec-XXXX", TMPDIR => 1);
+
+while (<STDIN>) {
+    chomp;
+
+    if ($_ eq "--") {
+        $new_group = 1;
+        next;
+    }
+
+    ++$i;
+
+    if ($new_group) {
+        push @groups, [];
+        $new_group = 0;
+    }
+
+    my $group = $groups[-1];
+    if (!defined $group->[0]) {
+        $group->[0] = $group->[1] = $i;
+    } else {
+        $group->[1] = $i;
+    }
+
+    # grep path:line:col: prefix
+    my $prefix = s{^([^:]+?[-:]\d+[-:](?:\d+[-:])?)}{} ? $1 : "";
+
+    $lines[$i] = [ $prefix, $_, $#groups ];
+
+    print $IN $_, "\n";
+}
+
+close $IN;
+
+my $grep = shift @ARGV;
+my $is_ag = ($grep =~ /\bag$/);
+my $num_arg = $is_ag ? "--numbers" : "-n";
+my @cmd = ($grep, $num_arg);
+if ($color && -t STDOUT) {
+    push @cmd, $is_ag ? "--color" : "--color=always";
+}
+
+unshift @ARGV, @cmd;
+push @ARGV, $infile;
+
+my %seen_group;
+
+open(my $OUT, "-|", @ARGV) or die("Failed to read from (@ARGV): $!");
+
+while (<$OUT>) {
+    chomp;
+
+    s{^([^:]+):}{};
+    my $n = $1;
+    $n =~ s/\e([^\[\]]|\[.*?[a-zA-Z]|\].*?\a)//g; # remove escape
+
+    $lines[$n][1] = $_;
+    ++$seen_group{ $lines[$n][2] };
+}
+
+close $OUT;
+
+for my $j (sort { $a <=> $b } keys %seen_group) {
+    my $group = $groups[$j];
+
+    for my $i ($group->[0] .. $group->[1]) {
+        print $lines[$i][0], $lines[$i][1], "\n";
+    }
+
+    print "--\n";
+}
+
+exit 0;
