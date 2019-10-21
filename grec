@@ -6,6 +6,9 @@
 # ( grep 'bar' from contextual output with 'foo' while maintaining context )
 # ( grec understands grep, rg, and ag )
 
+# $ grep qux * | grec -s grep baz
+# ( grep 'baz' from output with 'qux' without matching line prefixes )
+
 # Author: Gerald Lai
 # License: 0BSD
 
@@ -14,11 +17,29 @@ use strict;
 
 use File::Temp qw(tempfile);
 
-my $color = 1;
-if (@ARGV && $ARGV[0] =~ /^--(no)?color$/) {
-    $color = !$1;
-    shift @ARGV;
+use Getopt::Long qw(GetOptions);
+Getopt::Long::Configure qw(posix_default no_ignore_case pass_through bundling);
+
+my (@grec_args, @grep_cmd);
+my $is_cmd = 0;
+while (@ARGV) {
+    local $_ = shift @ARGV;
+
+    if (!$is_cmd && /^-/) {
+        push @grec_args, $_;
+        next;
+    }
+
+    $is_cmd = 1;
+    push @grep_cmd, $_;
 }
+@ARGV = @grec_args;
+
+my %OPT = (color => 1);
+GetOptions( \%OPT,
+  "color|c!",
+  "single|s!", # treat each line as a group
+);
 
 my $new_group = 1;
 my @groups;
@@ -39,7 +60,7 @@ while (<STDIN>) {
 
     if ($new_group) {
         push @groups, [];
-        $new_group = 0;
+        $new_group = $OPT{single};
     }
 
     my $group = $groups[-1];
@@ -59,20 +80,20 @@ while (<STDIN>) {
 
 close $IN;
 
-my $grep = shift @ARGV;
+my $grep = shift @grep_cmd;
 my $is_ag = ($grep =~ /\bag$/);
 my $num_arg = $is_ag ? "--numbers" : "-n";
 my @cmd = ($grep, $num_arg);
-if ($color && -t STDOUT) {
+if ($OPT{color} && -t STDOUT) {
     push @cmd, $is_ag ? "--color" : "--color=always";
 }
 
-unshift @ARGV, @cmd;
-push @ARGV, $infile;
+unshift @grep_cmd, @cmd;
+push @grep_cmd, $infile;
 
 my %seen_group;
 
-open(my $OUT, "-|", @ARGV) or die("Failed to read from (@ARGV): $!");
+open(my $OUT, "-|", @grep_cmd) or die("Failed to read from (@grep_cmd): $!");
 
 while (<$OUT>) {
     chomp;
@@ -94,7 +115,7 @@ for my $j (sort { $a <=> $b } keys %seen_group) {
         print $lines[$i][0], $lines[$i][1], "\n";
     }
 
-    print "--\n";
+    print "--\n" if !$OPT{single};
 }
 
 exit 0;
