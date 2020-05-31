@@ -71,7 +71,7 @@ while (<STDIN>) {
     }
 
     # grep path:line:col: prefix
-    my $prefix = s{^((?:\d+|[^:]+?[-:]\d+)[-:](?:\d+[-:])?)}{} ? $1 : "";
+    my $prefix = s{^((?:\d+|[^:]+?[-:]\d+)[-:](?:\d+:)?)}{} ? $1 : "";
 
     $lines[$i] = [ $prefix, $_, $#groups ];
 
