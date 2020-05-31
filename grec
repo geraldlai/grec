@@ -80,6 +80,13 @@ while (<STDIN>) {
 
 close $IN;
 
+my $inv = 0;
+@grep_cmd = grep {
+    my $v = /^(-v|--invert-match)$/;
+    $inv = 1 if $v;
+    !$v;
+} @grep_cmd;
+
 my $grep = shift @grep_cmd;
 my $is_ag = ($grep =~ /\bag$/);
 my $num_arg = $is_ag ? "--numbers" : "-n";
@@ -102,13 +109,20 @@ while (<$OUT>) {
     my $n = $1;
     $n =~ s/\e([^\[\]]|\[.*?[a-zA-Z]|\].*?\a)//g; # remove escape
 
-    $lines[$n][1] = $_;
+    $lines[$n][1] = $_ if !$inv;
     ++$seen_group{ $lines[$n][2] };
 }
 
 close $OUT;
 
-for my $j (sort { $a <=> $b } keys %seen_group) {
+my @hits;
+if ($inv) {
+    @hits = grep { !$seen_group{$_} } 0 .. $#groups;
+} else {
+    @hits = sort { $a <=> $b } keys %seen_group;
+}
+
+for my $j (@hits) {
     my $group = $groups[$j];
 
     for my $i ($group->[0] .. $group->[1]) {
